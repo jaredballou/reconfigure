@@ -10,7 +10,7 @@ class NginxParser (BaseParser):
 
     tokens = [
         (r"[\w_]+\s*?[^\n]*?{", lambda s, t: ('section_start', t)),
-        (r"[\w_]+?.+?;", lambda s, t: ('option', t)),
+        (r'''("[^"]*"|'[^']*'|[\w_])+?[^;]+?((?:[^;"']|"[^"]*"|'[^']*')+)?;''', lambda s, t: ('option', t)),
         (r"\s", lambda s, t: 'whitespace'),
         (r"$^", lambda s, t: 'newline'),
         (r"\#.*?\n", lambda s, t: ('comment', t)),
@@ -18,6 +18,15 @@ class NginxParser (BaseParser):
     ]
     token_comment = '#'
     token_section_end = '}'
+
+    """
+    Strip unwanted characters like whitespace and semicolons from around val. Remove quotes when they surround a value.
+    """
+    def strip_value(self,val):
+        val = val.strip('''\n \t;''')
+        if (val[0] == val[-1]) and (val[0] == '"' or val[0] == "'") and (len(val) > 2):
+            val = val[1:-1]
+        return val
 
     def parse(self, content):
         scanner = re.Scanner(self.tokens, re.DOTALL)
@@ -44,12 +53,12 @@ class NginxParser (BaseParser):
                     next_comment += '\n'
                 next_comment += token[1].strip('#/*').strip()
             if token[0] == 'option':
-                if ' ' in token[1] and not token[1][0] in ['"', "'"]:
-                    k, v = token[1].split(None, 1)
+                if ' ' in token[1]:
+                    k, v = [self.strip_value(p) for p in re.split("(\s|\\\".*?\\\"|'.*?')", token[1],1) if p.strip()]
                 else:
-                    v = token[1]
-                    k = ''
-                prop = PropertyNode(k.strip(), v[:-1].strip())
+                    k = self.strip_value(token[1])
+                    v = True
+                prop = PropertyNode(k, v)
                 prop.comment = next_comment
                 next_comment = None
                 node.children.append(prop)
